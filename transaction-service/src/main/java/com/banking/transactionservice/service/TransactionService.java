@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -79,6 +80,24 @@ public class TransactionService {
         return mapToResponse(savedTransaction);
     }
 
+    public TransactionResponse getTransaction(String transactionId){
+        return mapToResponse(transactionRepository
+                .findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transaction not found: " + transactionId)));
+    }
+
+    public List<TransactionResponse> getTransactionHistory(String accountNumber){
+        return transactionRepository
+                .findBySenderAccountNumberOrderByCreatedAtDesc(accountNumber)
+                .stream()
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
+    }
+
+    public TransactionResponse verifyOTP(String transactionId, String otp){
+        return null;
+    }
+
     private TransactionResponse mapToResponse(Transaction transaction) {
         TransactionResponse response = new TransactionResponse();
         response.setId(transaction.getId());
@@ -96,16 +115,6 @@ public class TransactionService {
         return response;
     }
 
-    public TransactionResponse getTransaction(String transactionId){
-        return null;
-    }
 
-    public List<TransactionResponse> getTransactionHistory(String accountNumber){
-        return null;
-    }
-
-    public TransactionResponse verifyOTP(String transactionId, String otp){
-        return null;
-    }
 
 }
