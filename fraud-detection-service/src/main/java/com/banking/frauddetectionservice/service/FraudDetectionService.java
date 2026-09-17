@@ -4,11 +4,15 @@ import com.banking.frauddetectionservice.client.AccountServiceClient;
 import com.banking.frauddetectionservice.model.FraudCheckResult;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -16,6 +20,14 @@ import java.util.Map;
 public class FraudDetectionService {
 
     private final AccountServiceClient accountServiceClient;
+    private final KafkaTemplate<String, Object> kafkaTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
+
+    @Value("${fraud.max-transactions-per-minute}")
+    private int maxTransactionsPerMinute;
+
+    private static final String VERIFICATION_REQUIRED_TOPIC = "verification.required";
+    private static final String FRAUD_CHECK_CLEAN_RESULT_TOPIC = "fraud.check.clean";
 
     public void checkTransaction(Map<String, Object> payload){
         String transactionId = (String)payload.get("transactionId");
@@ -35,9 +47,76 @@ public class FraudDetectionService {
                     "reason: {} - requesting OTP verification",
                     accountNumber, result.getReason());
 
-            Map<String, Object> response = new HashMap<>();
+            Map<String, Object> verificationEvent = new HashMap<>();
+            verificationEvent.put("transactionId", transactionId);
+            verificationEvent.put("accountNumber", accountNumber);
+            verificationEvent.put("reason", result.getReason());
 
+            kafkaTemplate.send(VERIFICATION_REQUIRED_TOPIC, transactionId,verificationEvent);
+        }
+        else {
+            // Transaction is clean
+            log.info("Transaction clean");
+
+            Map<String, Object> transactionCleanEvent = new HashMap<>();
+            transactionCleanEvent.put("transactionId", transactionId);
+            transactionCleanEvent.put("isFraud", false);
+            transactionCleanEvent.put("reason", null);
+
+            kafkaTemplate.send(FRAUD_CHECK_CLEAN_RESULT_TOPIC, transactionId, transactionCleanEvent);
+        }
+    }
+
+    private FraudCheckResult performFraudChecks(
+            String accountNumber,
+            BigDecimal amount,
+            BigDecimal senderBalance) {
+
+        // Pattern 1: Velocity Check
+        if(isVelocityExceeded(accountNumber)){
+            return new FraudCheckResult(
+                    true,
+                    "Too many transactions in 60 seconds " + "- velocity limit exceeded"
+            );
         }
 
+        // Pattern 2: Amount check
+        if(isAmountSuspiciuos(accountNumber, amount)){
+            return new FraudCheckResult(
+                    true,
+                    "Unusual transaction amount " + " - exceeds 3x your average"
+            );
+        }
+
+        // Pattern 3: Balance Check
+        if(senderBalance.compareTo(BigDecimal.ZERO) > 0
+            && isBalanceCheckFailed(senderBalance, amount)
+        ){
+            return new FraudCheckResult(
+                true,
+                "Transaction exceed 90% of account balance"
+            );
+        }
+
+        return new FraudCheckResult(false, null);
     }
+
+    private boolean isVelocityExceeded(String accountNumber) {
+        String key = "fraud:velocity" + accountNumber;
+        Long count = redisTemplate.opsForValue().increment(key);
+
+        if(count != null && count == 1){
+            redisTemplate.expire(key, 60, TimeUnit.SECONDS);
+        }
+
+        log.info("Velocity check - amount: {} count: {}/{}",
+                accountNumber, count, maxTransactionsPerMinute);
+
+        return count != null && count > maxTransactionsPerMinute;
+    }
+
+    private boolean isAmountSuspiciuos(String accountNumber, BigDecimal amount) {
+    }
+
+
 }
