@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.Map;
 
 @Service
@@ -28,5 +29,15 @@ public class FraudDetectionService {
                 transactionId, accountNumber, amount, senderBalance);
 
         FraudCheckResult result = performFraudChecks(accountNumber, amount, senderBalance);
+
+        if(result.isFraud()){
+            log.info("Suspicious activity detected - account: {} " +
+                    "reason: {} - requesting OTP verification",
+                    accountNumber, result.getReason());
+
+            Map<String, Object> response = new HashMap<>();
+
+        }
+
     }
 }
