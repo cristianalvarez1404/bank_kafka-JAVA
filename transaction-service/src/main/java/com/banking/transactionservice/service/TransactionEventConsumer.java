@@ -8,7 +8,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.kafka.core.KafkaTemplate;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -20,6 +22,11 @@ public class TransactionEventConsumer {
     private final TransactionRepository transactionRepository;
     private final RedisTemplate<String, String> redisTemplate;
     private static final long OTP_EXPIRY_MINUTES = 5;
+
+    private final kafkaTemplate<String, Object> kafkaTemplate;
+
+    private static final String TRANSACTION_OTP_GENERATED_TOPIC = "transaction.otp.generated";
+
     /**
      * Consume verification.required
      * Generate OTP and ask user to verify
@@ -52,10 +59,26 @@ public class TransactionEventConsumer {
             redisTemplate.opsForValue().set(otpKey, otp, OTP_EXPIRY_MINUTES, TimeUnit.MINUTES);
 
             //Update status
+            transaction.setStatus(TransactionStatus.PENDING_VERIFICATION);
+            transactionRepository.save(transaction);
+
+            log.info("OTP generated for transaction: {} expires in {} min",
+                    transactionId,
+                    OTP_EXPIRY_MINUTES);
+
+            // Notify user
+            Map<String, Object> otpEvent =  new HashMap<>();
+            otpEvent.put("transactionId", transactionId);
+            otpEvent.put("accountNumber", accountNumber);
+            otpEvent.put("reason", reason);
+            otpEvent.put("otp", otp);
+            otpEvent.put("amount", payload.get("amount"));
+
+            kafkaTemplate.send(TRANSACTION_OTP_GENERATED_TOPIC, transactionId, otpEvent);
 
         }
         catch (Exception e){
-
+            log.error("Error handling verification required: {}", e.getMessage());
         }
     }
 }
