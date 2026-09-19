@@ -5,6 +5,7 @@ import com.banking.transactionservice.entity.TransactionStatus;
 import com.banking.transactionservice.repository.TransactionRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -32,6 +33,8 @@ public class TransactionEventConsumer {
      * Generate OTP and ask user to verify
      *
      * */
+
+    @KafkaListener(topics = "verification.required")
     public void consumeVerificationRequired (
             @Payload Map<String, Object> payload
             ){
