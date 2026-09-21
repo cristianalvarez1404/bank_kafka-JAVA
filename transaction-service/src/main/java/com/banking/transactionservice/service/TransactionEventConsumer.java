@@ -84,4 +84,10 @@ public class TransactionEventConsumer {
             log.error("Error handling verification required: {}", e.getMessage());
         }
     }
+
+    public void consumeFraudCheckCleanResult(
+            @Payload Map<String, Object> payload
+    ){
+
+    }
 }
